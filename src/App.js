@@ -53,16 +53,16 @@ function App() {
         }
       );
   
-      // Loop through the responses
+      // Assuming the response is in the format of an array of items
       const responses = response.data;
   
       if (responses.length > 0) {
         // Map through the responses and accumulate the chat messages
-        const newAssistantMessages = responses.map((responseItem) => {
+        const newAssistantMessages = responses.map((responseItem, index) => {
           const { answer, context, current_bucket, next_bucket } = responseItem;
   
           return [
-            { role: "assistant", content: renderMessageContent(JSON.stringify(answer, null, 2)) }, 
+            { role: "assistant", content: renderMessageContent(`Answer: ${JSON.stringify(answer, null, 2)}`) },
             { role: "assistant", content: renderMessageContent(`Context: ${context}`) },
             { role: "assistant", content: renderMessageContent(`Current Bucket: ${current_bucket}`) },
             { role: "assistant", content: renderMessageContent(`Next Bucket: ${next_bucket}`) },

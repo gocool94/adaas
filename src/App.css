@@ -164,6 +164,7 @@ label {
 .file-input {
   display: none;
 }
+
 /* File Content Styling */
 .file-content {
   background-color: #f0f8ff;
@@ -175,4 +176,54 @@ label {
   font-size: 14px;
   white-space: pre-wrap; /* To preserve line breaks */
   word-wrap: break-word;
+}
+
+.response-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+
+.response-table th, .response-table td {
+  padding: 8px;
+  text-align: left;
+  border: 1px solid #ddd;
+}
+
+.file-input {
+  display: none;
+}
+
+/* Styled components for better viewability */
+.response-item {
+  background-color: #f9f9f9;
+  padding: 15px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.response-item .label {
+  font-weight: bold;
+  color: #333;
+}
+
+.response-item .value {
+  color: #555;
+}
+
+.response-item .focus-next {
+  font-style: italic;
+  color: #4a90e2;
+}
+
+.message.assistant .response-item {
+  background-color: #f1f1f1;
+}
+
+.message.user .response-item {
+  background-color: #4a90e2;
+  color: white;
 }
