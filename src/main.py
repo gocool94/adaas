@@ -1,23 +1,23 @@
 from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List, Optional, Dict
 import snowflake.connector
 import logging
+from fastapi.middleware.cors import CORSMiddleware
+from functools import lru_cache
 
-# Initialize the app
+# Initialize FastAPI app
 app = FastAPI()
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logger = logging.getLogger(__name__)
 
-# CORS Middleware setup
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],  # React app URL
+    allow_origins=["*"],  # ✅ Allow frontend
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all HTTP methods
-    allow_headers=["*"],  # Allow all headers
+    allow_methods=["*"],  # ✅ Allow all HTTP methods (GET, POST, etc.)
+    allow_headers=["*"], 
 )
 
 # Snowflake credentials
@@ -30,7 +30,7 @@ snowflake_credentials = {
     "schema": "DATA_SCIENCE",
 }
 
-# Domains
+# Define domains and maturity level mapping
 domains = [
     "KIPI_KIPI_PRIMARY_ADAAS_SNOWFLAKE_SECURE_SHARE.DATA_SCIENCE.DS_BUCKET_DATA",
     "KIPI_KIPI_PRIMARY_ADAAS_SNOWFLAKE_SECURE_SHARE.DATA_SCIENCE.DE_BUCKET_DATA",
@@ -39,147 +39,139 @@ domains = [
     "KIPI_KIPI_PRIMARY_ADAAS_SNOWFLAKE_SECURE_SHARE.DATA_SCIENCE.PM_BUCKET_DATA",
 ]
 
-# Models
-class QueryRequest(BaseModel):
+maturity_mapping = {
+    "DS": "Data Science",
+    "DE": "Data Engineering",
+    "DG": "Data Governance",
+    "BI": "Business Intelligence",
+    "PM": "Project Management",
+}
+
+# Request Model
+class ChatRequest(BaseModel):
     chat: str
-    model: str
-    domains: Optional[List[str]] = None  # Override default domains if needed
 
-class QueryResponse(BaseModel):
-    answer: Dict  # Changed from str to Dict to accommodate structured responses
-    context: str
-    current_bucket: str
-    next_bucket: str
-
-# Snowflake connection
+# Function to connect to Snowflake
 def get_snowflake_connection():
-    """Establish a connection to the Snowflake database."""
+    logger.info("Connecting to Snowflake...")
     try:
-        logging.info("Connecting to Snowflake...")
-        connection = snowflake.connector.connect(**snowflake_credentials)
-        logging.info("Connected to Snowflake.")
-        return connection
+        conn = snowflake.connector.connect(
+            user=snowflake_credentials["user"],
+            password=snowflake_credentials["password"],
+            account=snowflake_credentials["account"],
+            warehouse=snowflake_credentials["warehouse"],
+            database=snowflake_credentials["database"],
+            schema=snowflake_credentials["schema"]
+        )
+        return conn
     except Exception as e:
-        logging.error(f"Error connecting to Snowflake: {e}")
-        raise HTTPException(status_code=500, detail="Failed to connect to Snowflake")
+        logger.error(f"Database connection error: {e}")
+        raise HTTPException(status_code=500, detail="Database connection error")
 
-# Helper: Find similar document
-def find_similar_doc(connection, text: str, doc_table: str) -> Dict:
-    """Find the most similar document in the specified table."""
+# Summarize chat input
+def summarize(chat: str, model: str):
+    logger.info("Summarizing chat input...")
+    query = f"""
+        SELECT SNOWFLAKE.CORTEX.COMPLETE('{model}', 
+        'Provide the most recent question with essential context from this support chat: {chat.replace("'", "''")}')
+    """
     try:
-        cursor = connection.cursor()
-        query = f"""
-            SELECT JSON_OBJECT, MATURITY_LEVEL,
-                VECTOR_COSINE_SIMILARITY(
-                    embedding,
-                    SNOWFLAKE.CORTEX.EMBED_TEXT_768('e5-base-v2', '{text.replace("'", "''")}')
-                ) AS dist
-            FROM {doc_table}
-            ORDER BY dist DESC
-            LIMIT 1
-        """
+        conn = get_snowflake_connection()
+        cursor = conn.cursor()
         cursor.execute(query)
-        result = cursor.fetchone()
-        return {
-            "json_object": result[0],
-            "maturity_level": result[1],
-        }
+        summary = cursor.fetchone()[0]
+        cursor.close()
+        conn.close()
+        return summary.replace("'", "")
     except Exception as e:
-        logging.error(f"Error finding similar document: {e}")
-        raise HTTPException(status_code=500, detail="Failed to find similar document")
+        logger.error(f"Error summarizing chat: {e}")
+        raise HTTPException(status_code=500, detail="Error summarizing chat")
 
-# Helper: Generate a structured response
-def generate_response(context: str, current_bucket: str, next_bucket: str) -> Dict:
+# Find the most relevant document
+def find_similar_doc(text: str, doc_table: str):
+    logger.info(f"Retrieving most relevant document for: {doc_table}...")
+    query = f"""
+    SELECT JSON_OBJECT, MATURITY_LEVEL, 
+           VECTOR_COSINE_SIMILARITY(embedding, SNOWFLAKE.CORTEX.EMBED_TEXT_768('e5-base-v2', '{text.replace("'", "''")}')) as dist
+    FROM {doc_table}
+    ORDER BY dist DESC
+    LIMIT 1
     """
-    Dynamically parse the response context into a structured format.
-    """
-    import re
-
-    description_match = re.search(r'"DESCRIPTION":"(.*?)"', context, re.DOTALL)
-    level_match = re.search(r'"MATURITY_LEVEL":"(.*?)"', context)
-
-    description = description_match.group(1).strip() if description_match else "No description available."
-    maturity_level = level_match.group(1).strip() if level_match else "Unknown"
-
-    # Split the description into bullet points
-    details = [line.strip() for line in description.split("\n") if line.strip()]
-
-    return {
-        "current_bucket": {
-            "name": maturity_level,
-            "description": "Most Mature",
-            "details": details,
-        },
-        "next_bucket": {
-            "name": next_bucket,
-            "description": "Future Level of Maturity",
-            "focus": "Achieving scalability, fully automated deployment pipelines, and seamless integration for all data science workflows."
-        }
-    }
-
-@app.post("/query", response_model=List[QueryResponse])
-async def query_endpoint(query_request: QueryRequest):
-    """
-    Handle POST requests to the /query endpoint.
-    Iterate through all domains and return detailed responses for each.
-    """
-    chat = query_request.chat
-    model = query_request.model
-    selected_domains = query_request.domains or domains
-
     try:
-        connection = get_snowflake_connection()
-        responses = []
-
-        # Iterate through all domains
-        for doc_table in selected_domains:
-            try:
-                # Find the most relevant document
-                doc_data = find_similar_doc(connection, chat, doc_table)
-                context = doc_data["json_object"]
-                current_bucket = doc_data["maturity_level"]
-
-                # Determine the next maturity bucket
-                cursor = connection.cursor()
-                query = f"""
-                    SELECT DISTINCT MATURITY_LEVEL
-                    FROM {doc_table}
-                    ORDER BY MATURITY_LEVEL
-                """
-                cursor.execute(query)
-                maturity_levels = [row[0] for row in cursor.fetchall()]
-
-                # Find the next bucket
-                next_bucket_index = maturity_levels.index(current_bucket) + 1
-                next_bucket = (
-                    maturity_levels[next_bucket_index]
-                    if next_bucket_index < len(maturity_levels)
-                    else "Does not exist"
-                )
-
-                # Generate a structured response for this domain
-                structured_response = generate_response(context, current_bucket, next_bucket)
-                responses.append(
-                    QueryResponse(
-                        answer=structured_response,
-                        context=context,
-                        current_bucket=current_bucket,
-                        next_bucket=next_bucket,
-                    )
-                )
-                logging.info(f"Response ******************")
-                logging.info(f"Response to frontend: {responses}")
-
-
-            except Exception as e:
-                logging.warning(f"Error processing domain {doc_table}: {e}")
-                continue  # Skip this domain and process the next
-
-        if not responses:
-            raise HTTPException(status_code=404, detail="No relevant documents found in any domain.")
-
-        return responses
-
+        conn = get_snowflake_connection()
+        cursor = conn.cursor()
+        cursor.execute(query)
+        doc = cursor.fetchone()
+        cursor.close()
+        conn.close()
+        if doc:
+            return {"json_object": doc[0], "maturity_level": doc[1]}
+        return None
     except Exception as e:
-        logging.error(f"Error processing query: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error")
+        logger.error(f"Error retrieving similar document: {e}")
+        raise HTTPException(status_code=500, detail="Error retrieving similar document")
+
+# Construct AI prompt
+def construct_prompt(chat: str, context: str, default_level: str):
+    prompt = f"""
+    Answer this new customer question sent to our support agent. Use the provided context taken from previous support chat logs. 
+    Be concise and only answer the latest question.
+    
+    - **Current Maturity Level**: {default_level}
+    - **Next Maturity Level**: [To be determined]
+    
+    Question: {chat}
+    Context: {context}
+    """
+    return prompt.replace("'", "")
+
+# Generate AI response
+def get_response(prompt: str, model: str):
+    logger.info("Generating AI response...")
+    query = f"""
+        SELECT SNOWFLAKE.CORTEX.COMPLETE('{model}', '{prompt.replace("'", "''")}')
+    """
+    try:
+        conn = get_snowflake_connection()
+        cursor = conn.cursor()
+        cursor.execute(query)
+        response = cursor.fetchone()[0]
+        cursor.close()
+        conn.close()
+        return response
+    except Exception as e:
+        logger.error(f"Error generating response: {e}")
+        raise HTTPException(status_code=500, detail="Error generating response")
+
+# FastAPI endpoint to handle chat requests
+@app.post("/chat")
+def chat_with_bot(request: ChatRequest):
+    logger.info(f"Received chat request: {request.chat}")
+    model = "mistral-large"
+
+    # Step 1: Summarize chat
+    chat_summary = summarize(request.chat, model)
+
+    # Step 2: Process all domains
+    responses = []
+    for doc_table in domains:
+        context = find_similar_doc(chat_summary, doc_table)
+        
+        if context:
+            domain_code = doc_table.split(".")[-1][:2]  # Extract domain short code (e.g., "DS")
+            domain_name = maturity_mapping.get(domain_code, "Unknown")
+
+            prompt = construct_prompt(request.chat, context["json_object"], context["maturity_level"])
+            response = get_response(prompt, model)
+
+            responses.append({
+                "domain": domain_name,
+                "maturity_level": context["maturity_level"],
+                "response": response
+            })
+            logger.info(responses)
+
+    if not responses:
+        raise HTTPException(status_code=404, detail="No relevant context found.")
+    
+    return responses
