@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
+import ReactMarkdown from "react-markdown";
 import "./App.css";
 
 function App() {
@@ -7,7 +8,7 @@ function App() {
   const [userMessage, setUserMessage] = useState("");
   const [selectedModel, setSelectedModel] = useState("mistral-large");
   const [fileContent, setFileContent] = useState("");
-  const [loading, setLoading] = useState(false); // ✅ Loading state
+  const [loading, setLoading] = useState(false);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -40,12 +41,12 @@ function App() {
 
     const newMessages = [
       ...messages,
-      { role: "user", content: userMessage || "📂 File Content: " + fileContent },
+      { role: "user", content: userMessage || `📂 **File Content:** ${fileContent}` },
     ];
     setMessages(newMessages);
     setUserMessage("");
     setFileContent("");
-    setLoading(true); // ✅ Start loading animation
+    setLoading(true);
 
     try {
       const response = await axios.post(
@@ -57,35 +58,37 @@ function App() {
       const responses = response.data;
 
       if (responses.length > 0) {
-        const formattedResponses = responses.map((responseItem) => ({
-          role: "assistant",
-          content: (
-            <div className="p-4 bg-white shadow-md rounded-lg border-l-4 border-blue-500">
-              <h2 className="text-xl font-bold text-gray-800 mb-2">
-                🌎 Domain: <span className="text-blue-500">{responseItem.domain}</span>
-              </h2>
+        responses.forEach((responseItem) => {
+          setMessages((prevMessages) => [
+            ...prevMessages,
+            {
+              role: "assistant",
+              content: (
+                <div className="p-4 bg-white shadow-md rounded-lg border-l-4 border-blue-500">
+                  <h2 className="text-xl font-bold text-gray-800 mb-2">
+                    🌎 Domain: <span className="text-blue-500">{responseItem.domain}</span>
+                  </h2>
 
-              <p className="text-lg font-semibold text-gray-600">
-                📊 Current Maturity Level: <span className="text-green-500">{responseItem.maturity_level}</span>
-              </p>
+                  <p className="text-lg font-semibold text-gray-600">
+                    📊 Current Maturity Level: <span className="text-green-500">{responseItem.maturity_level}</span>
+                  </p>
 
-              {responseItem.next_maturity_level && responseItem.next_maturity_level !== "Does not exist" && (
-                <p className="text-lg font-semibold text-gray-700 mt-2">
-                  🔄 Next Maturity Level:{" "}
-                  <span className="text-red-500">{responseItem.next_maturity_level}</span>
-                </p>
-              )}
+                  {responseItem.next_maturity_level !== "Does not exist" && (
+                    <p className="text-lg font-semibold text-gray-700 mt-2">
+                      🔄 Next Maturity Level: <span className="text-red-500">{responseItem.next_maturity_level}</span>
+                    </p>
+                  )}
 
-              <div className="mt-4 bg-gray-50 p-4 rounded-lg border-l-4 border-green-500">
-                <p className="text-gray-800 text-base leading-relaxed font-medium">
-                  <strong>💡 Answer:</strong> {responseItem.response}
-                </p>
-              </div>
-            </div>
-          ),
-        }));
-
-        setMessages([...newMessages, ...formattedResponses]);
+                  <div className="mt-4 bg-gray-50 p-4 rounded-lg border-l-4 border-green-500">
+                    <ReactMarkdown className="text-gray-800 text-base leading-relaxed font-medium">
+                      {`💡 **Answer:**\n${responseItem.response}`}
+                    </ReactMarkdown>
+                  </div>
+                </div>
+              ),
+            },
+          ]);
+        });
       } else {
         setMessages([...newMessages, { role: "assistant", content: "No relevant data found." }]);
       }
@@ -94,7 +97,7 @@ function App() {
       const errorMessage = error.response?.data?.detail || "An error occurred while processing.";
       setMessages([...newMessages, { role: "assistant", content: errorMessage }]);
     } finally {
-      setLoading(false); // ✅ Stop loading animation
+      setLoading(false);
     }
   };
 
@@ -110,7 +113,7 @@ function App() {
         <div className="messages space-y-4">
           {messages.map((message, index) => (
             <div key={index} className={`message ${message.role}`}>
-              <p>{message.content}</p>
+              {typeof message.content === "string" ? <p>{message.content}</p> : message.content}
             </div>
           ))}
 
@@ -148,6 +151,19 @@ function App() {
           <button className="send-button bg-blue-500 text-white px-4 py-2 rounded ml-2" onClick={handleSendMessage}>
             Send
           </button>
+        </div>
+
+        {/* ✅ File Upload Section */}
+        <div className="file-upload mt-4">
+          <input type="file" accept=".txt" onChange={handleFileUpload} className="hidden" id="file-upload" />
+          <label htmlFor="file-upload" className="cursor-pointer bg-gray-200 p-2 rounded shadow-md">
+            📂 Upload File
+          </label>
+          {fileContent && (
+            <p className="text-sm text-gray-600 mt-2">
+              ✅ File Loaded: {fileContent.substring(0, 50)}...
+            </p>
+          )}
         </div>
       </div>
     </div>

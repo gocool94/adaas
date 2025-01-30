@@ -3,7 +3,6 @@ from pydantic import BaseModel
 import snowflake.connector
 import logging
 from fastapi.middleware.cors import CORSMiddleware
-from functools import lru_cache
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -17,7 +16,7 @@ app.add_middleware(
     allow_origins=["*"],  # ✅ Allow frontend
     allow_credentials=True,
     allow_methods=["*"],  # ✅ Allow all HTTP methods (GET, POST, etc.)
-    allow_headers=["*"], 
+    allow_headers=["*"],
 )
 
 # Snowflake credentials
@@ -87,9 +86,10 @@ def summarize(chat: str, model: str):
         logger.error(f"Error summarizing chat: {e}")
         raise HTTPException(status_code=500, detail="Error summarizing chat")
 
-# Find the most relevant document
+# Retrieve relevant document and next maturity level
 def find_similar_doc(text: str, doc_table: str):
     logger.info(f"Retrieving most relevant document for: {doc_table}...")
+
     query = f"""
     SELECT JSON_OBJECT, MATURITY_LEVEL, 
            VECTOR_COSINE_SIMILARITY(embedding, SNOWFLAKE.CORTEX.EMBED_TEXT_768('e5-base-v2', '{text.replace("'", "''")}')) as dist
@@ -97,29 +97,55 @@ def find_similar_doc(text: str, doc_table: str):
     ORDER BY dist DESC
     LIMIT 1
     """
+
+    next_level_query = f"""
+    SELECT JSON_OBJECT, MATURITY_LEVEL FROM {doc_table}
+    ORDER BY MATURITY_LEVEL
+    """
+
     try:
         conn = get_snowflake_connection()
         cursor = conn.cursor()
+
+        # Get current maturity level
         cursor.execute(query)
         doc = cursor.fetchone()
+
+        # Get all maturity levels sorted
+        cursor.execute(next_level_query)
+        maturity_docs = cursor.fetchall()
+
         cursor.close()
         conn.close()
+
         if doc:
-            return {"json_object": doc[0], "maturity_level": doc[1]}
+            current_maturity = doc[1]
+            next_maturity = "Does not exist"
+
+            for i, (json_obj, maturity_level) in enumerate(maturity_docs):
+                if maturity_level == current_maturity and i + 1 < len(maturity_docs):
+                    next_maturity = maturity_docs[i + 1][1]
+                    break
+
+            return {
+                "json_object": doc[0],
+                "maturity_level": current_maturity,
+                "next_maturity_level": next_maturity,
+            }
         return None
     except Exception as e:
         logger.error(f"Error retrieving similar document: {e}")
         raise HTTPException(status_code=500, detail="Error retrieving similar document")
 
 # Construct AI prompt
-def construct_prompt(chat: str, context: str, default_level: str):
+def construct_prompt(chat: str, context: str, current_level: str, next_level: str):
     prompt = f"""
     Answer this new customer question sent to our support agent. Use the provided context taken from previous support chat logs. 
     Be concise and only answer the latest question.
-    
-    - **Current Maturity Level**: {default_level}
-    - **Next Maturity Level**: [To be determined]
-    
+
+    - **Current Maturity Level**: {current_level}
+    - **Next Maturity Level**: {next_level}
+
     Question: {chat}
     Context: {context}
     """
@@ -158,15 +184,21 @@ def chat_with_bot(request: ChatRequest):
         context = find_similar_doc(chat_summary, doc_table)
         
         if context:
-            domain_code = doc_table.split(".")[-1][:2]  # Extract domain short code (e.g., "DS")
+            domain_code = doc_table.split(".")[-1][:2]
             domain_name = maturity_mapping.get(domain_code, "Unknown")
 
-            prompt = construct_prompt(request.chat, context["json_object"], context["maturity_level"])
+            prompt = construct_prompt(
+                request.chat, 
+                context["json_object"], 
+                context["maturity_level"], 
+                context["next_maturity_level"]
+            )
             response = get_response(prompt, model)
 
             responses.append({
                 "domain": domain_name,
                 "maturity_level": context["maturity_level"],
+                "next_maturity_level": context["next_maturity_level"],
                 "response": response
             })
             logger.info(responses)
