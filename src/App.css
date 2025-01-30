@@ -1,4 +1,4 @@
-/* Reset some default styles */
+/* ✅ Reset default styles */
 * {
   margin: 0;
   padding: 0;
@@ -35,7 +35,7 @@ body {
   color: #4a90e2;
   text-transform: uppercase;
   letter-spacing: 3px;
-  animation: slideIn 2s ease-out;
+  animation: slideIn 1.5s ease-out;
 }
 
 @keyframes slideIn {
@@ -49,9 +49,10 @@ body {
   }
 }
 
+/* ✅ Chat Container */
 .chat-container {
   background-color: #fff;
-  padding: 30px;
+  padding: 20px;
   width: 100%;
   max-width: 600px;
   height: 80vh;
@@ -60,30 +61,34 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  position: relative;
   overflow: hidden;
 }
 
+/* ✅ Messages */
 .messages {
   overflow-y: auto;
   flex-grow: 1;
-  margin-bottom: 20px;
   padding: 10px;
-  animation: fadeIn 1s ease-in-out;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  animation: fadeIn 0.5s ease-in-out;
 }
 
+/* ✅ Individual Messages */
 .message {
-  display: inline-block;
+  display: block;
+  width: fit-content;
   max-width: 75%;
-  padding: 15px;
-  margin: 10px 0;
-  border-radius: 20px;
+  padding: 12px;
+  border-radius: 18px;
   font-size: 14px;
   line-height: 1.5;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  animation: bounceIn 0.5s ease-out;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  animation: bounceIn 0.4s ease-out;
 }
 
+/* ✅ User Messages */
 .message.user {
   background-color: #4a90e2;
   color: white;
@@ -91,6 +96,7 @@ body {
   border-top-left-radius: 0;
 }
 
+/* ✅ Assistant Messages */
 .message.assistant {
   background-color: #f1f1f1;
   color: #333;
@@ -98,6 +104,66 @@ body {
   border-top-right-radius: 0;
 }
 
+/* ✅ Loading Container */
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin-top: 10px;
+  padding: 10px;
+}
+
+/* ✅ Loading Text */
+.loading-text {
+  font-size: 14px;
+  color: #4a90e2;
+  font-weight: bold;
+  text-align: center;
+  margin-bottom: 5px;
+}
+
+/* ✅ Loading Dots Animation */
+.dot-flashing {
+  display: inline-block;
+  position: relative;
+  width: 80px;
+  height: 10px;
+}
+
+.dot-flashing::before,
+.dot-flashing::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  background-color: #3498db;
+  border-radius: 50%;
+  animation: flash 1.2s infinite ease-in-out both;
+}
+
+.dot-flashing::before {
+  left: -15px;
+  animation-delay: -0.3s;
+}
+
+.dot-flashing::after {
+  left: 15px;
+  animation-delay: 0.3s;
+}
+
+@keyframes flash {
+  0%, 80%, 100% {
+    opacity: 0;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+
+/* ✅ Input & Settings Section */
 .settings {
   display: flex;
   justify-content: space-between;
@@ -149,6 +215,7 @@ label {
   transform: scale(1.05);
 }
 
+/* ✅ File Upload Section */
 .file-upload-icon {
   cursor: pointer;
   font-size: 22px;
@@ -165,7 +232,6 @@ label {
   display: none;
 }
 
-/* File Content Styling */
 .file-content {
   background-color: #f0f8ff;
   color: #333;
@@ -174,27 +240,11 @@ label {
   border-radius: 10px;
   font-family: "Courier New", Courier, monospace;
   font-size: 14px;
-  white-space: pre-wrap; /* To preserve line breaks */
+  white-space: pre-wrap;
   word-wrap: break-word;
 }
 
-.response-table {
-  width: 100%;
-  border-collapse: collapse;
-  margin-top: 20px;
-}
-
-.response-table th, .response-table td {
-  padding: 8px;
-  text-align: left;
-  border: 1px solid #ddd;
-}
-
-.file-input {
-  display: none;
-}
-
-/* Styled components for better viewability */
+/* ✅ Response Styling */
 .response-item {
   background-color: #f9f9f9;
   padding: 15px;

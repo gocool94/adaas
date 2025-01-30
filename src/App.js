@@ -6,7 +6,8 @@ function App() {
   const [messages, setMessages] = useState([]);
   const [userMessage, setUserMessage] = useState("");
   const [selectedModel, setSelectedModel] = useState("mistral-large");
-  const [fileContent, setFileContent] = useState(""); // ✅ Store file content
+  const [fileContent, setFileContent] = useState("");
+  const [loading, setLoading] = useState(false); // ✅ Loading state
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -21,13 +22,12 @@ function App() {
     setSelectedModel(e.target.value);
   };
 
-  // ✅ Read the selected file and store its content
   const handleFileUpload = (e) => {
     const file = e.target.files[0];
     if (file && file.type === "text/plain") {
       const reader = new FileReader();
       reader.onload = () => {
-        setFileContent(reader.result); // Store the file content
+        setFileContent(reader.result);
       };
       reader.readAsText(file);
     } else {
@@ -38,44 +38,37 @@ function App() {
   const handleSendMessage = async () => {
     if (!userMessage.trim() && !fileContent.trim()) return;
 
-    // Add user message and file content to chat
     const newMessages = [
       ...messages,
-      { role: "user", content: userMessage || "File Content: " + fileContent },
+      { role: "user", content: userMessage || "📂 File Content: " + fileContent },
     ];
     setMessages(newMessages);
     setUserMessage("");
-    setFileContent(""); // Clear file content after sending
+    setFileContent("");
+    setLoading(true); // ✅ Start loading animation
 
     try {
       const response = await axios.post(
-        "http://localhost:8000/chat",  // ✅ API call to FastAPI backend
-        {
-          chat: userMessage,
-          file: fileContent, // ✅ Send file content if provided
-        },
+        "http://localhost:8000/chat",
+        { chat: userMessage, file: fileContent },
         { headers: { "Content-Type": "application/json" } }
       );
 
-      const responses = response.data;  // ✅ Get responses from API
+      const responses = response.data;
 
       if (responses.length > 0) {
-        // Format responses to show correctly in chat
         const formattedResponses = responses.map((responseItem) => ({
           role: "assistant",
           content: (
             <div className="p-4 bg-white shadow-md rounded-lg border-l-4 border-blue-500">
-              {/* Domain Name */}
               <h2 className="text-xl font-bold text-gray-800 mb-2">
                 🌎 Domain: <span className="text-blue-500">{responseItem.domain}</span>
               </h2>
 
-              {/* Current Maturity Level */}
               <p className="text-lg font-semibold text-gray-600">
                 📊 Current Maturity Level: <span className="text-green-500">{responseItem.maturity_level}</span>
               </p>
 
-              {/* Next Maturity Level */}
               {responseItem.next_maturity_level && responseItem.next_maturity_level !== "Does not exist" && (
                 <p className="text-lg font-semibold text-gray-700 mt-2">
                   🔄 Next Maturity Level:{" "}
@@ -83,7 +76,6 @@ function App() {
                 </p>
               )}
 
-              {/* Answer */}
               <div className="mt-4 bg-gray-50 p-4 rounded-lg border-l-4 border-green-500">
                 <p className="text-gray-800 text-base leading-relaxed font-medium">
                   <strong>💡 Answer:</strong> {responseItem.response}
@@ -93,7 +85,7 @@ function App() {
           ),
         }));
 
-        setMessages([...newMessages, ...formattedResponses]);  // ✅ Update chat messages
+        setMessages([...newMessages, ...formattedResponses]);
       } else {
         setMessages([...newMessages, { role: "assistant", content: "No relevant data found." }]);
       }
@@ -101,6 +93,8 @@ function App() {
       console.error("Error while fetching response:", error);
       const errorMessage = error.response?.data?.detail || "An error occurred while processing.";
       setMessages([...newMessages, { role: "assistant", content: errorMessage }]);
+    } finally {
+      setLoading(false); // ✅ Stop loading animation
     }
   };
 
@@ -119,6 +113,15 @@ function App() {
               <p>{message.content}</p>
             </div>
           ))}
+
+          {/* ✅ Show loading message and animation while waiting for response */}
+          {loading && (
+            <div className="loading-container">
+              <p className="loading-text">🔎 Finding relevant Bucket & support chat logs...</p>
+              <div className="dot-flashing"></div>
+            </div>
+          )}
+
           <div ref={messagesEndRef}></div>
         </div>
 
@@ -145,19 +148,6 @@ function App() {
           <button className="send-button bg-blue-500 text-white px-4 py-2 rounded ml-2" onClick={handleSendMessage}>
             Send
           </button>
-        </div>
-
-        {/* ✅ File Upload Section */}
-        <div className="file-upload mt-4">
-          <input type="file" accept=".txt" onChange={handleFileUpload} className="hidden" id="file-upload" />
-          <label htmlFor="file-upload" className="cursor-pointer bg-gray-200 p-2 rounded shadow-md">
-            📂 Upload File
-          </label>
-          {fileContent && (
-            <p className="text-sm text-gray-600 mt-2">
-              ✅ File Loaded: {fileContent.substring(0, 50)}...
-            </p>
-          )}
         </div>
       </div>
     </div>
